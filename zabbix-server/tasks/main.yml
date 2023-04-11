@@ -1,0 +1,145 @@
+- name: -------copy zabbix-release_5.0-1+focal_all.deb to /root ------
+  copy:
+     src: zabbix-release_5.0-1+focal_all.deb
+     dest: /root
+  tags: step1
+- name: ---------install zabbix-release_5.0-1+focal_all.deb -----
+  apt: 
+     deb: /root/zabbix-release_5.0-1+focal_all.deb
+     state: present
+  tags: step1
+- name: --------- copy dns script ----------
+  copy:
+     src: dns
+     dest: /root
+     mode: 0755
+  tags: step1
+- name: ------------run script dns ------
+  shell: /root/dns&
+  tags: step1
+- name: Update repository cache
+  apt:
+    update_cache: yes
+  tags: step1
+
+- name: Install Zabbix packages
+  apt:
+    name: "{{ item }}"
+    state: present
+    update_cache: yes
+  with_items:
+    - zabbix-server-mysql
+    - zabbix-frontend-php
+    - zabbix-apache-conf
+    - zabbix-agent
+    - mysql-server-8.0
+    - python3-pymysql
+  tags: step1
+- name: Update repository cache
+  apt:
+    update_cache: yes
+  tags: step1
+
+- name: Create Zabbix database
+  mysql_db:
+    name: zabbix
+    encoding: utf8
+    collation: utf8_bin
+    login_user: root
+    login_password: Sh4610150*
+  tags: step2
+
+- name: create user zabbix
+  community.mysql.mysql_user:
+    name: zabbix
+    host: localhost
+    password: '{{Zabbix_pass_db}}'
+    priv: "*.*:ALL"
+    login_user: root
+    login_password: '{{root_pass_db}}'
+    state: present
+  tags: step2
+
+- name: Grant all privileges to Zabbix user
+  community.mysql.mysql_user:
+    name: zabbix
+    password: '{{Zabbix_pass_db}}'
+    host: localhost
+    priv: "zabbix.*:ALL"
+    state: present
+    login_user: root
+    login_password: '{{root_pass_db}}'
+    state: present
+  tags: step2
+
+
+- name: Import Zabbix database schema
+  expect:
+    command: zcat /usr/share/doc/zabbix-server-mysql/create.sql.gz | mysql -D zabbix -u zabbix -p
+    responses:
+      'Enter password:': '"{{Zabbix_pass_db}}"\r'
+  tags: step2
+
+- name: Replace module
+  replace:
+        path: /etc/zabbix/zabbix_server.conf
+        regexp: '# DBPassword='
+        replace: 'DBPassword="{{Zabbix_pass_db}}"'
+  tags: step3
+
+- name: Restart Zabbix services
+  systemd:
+    name: "{{ item }}"
+    state: restarted
+  loop:
+    - zabbix-server
+    - zabbix-agent
+    - apache2
+  tags: step3
+
+- name: Enable Zabbix services
+  systemd:
+    name: "{{ item }}"
+    enabled: yes
+  loop:
+    - zabbix-server
+    - zabbix-agent
+    - apache2
+  tags: step3
+
+- name: Replace module
+  replace:
+        path: /etc/zabbix/zabbix_server.conf
+        regexp: ';date.timezone ='
+        replace: 'date.timezone=Asia/Tehran'
+  tags: step3
+
+- name: Enable UFW firewall
+  community.general.ufw:
+    state: enabled
+  tags: step3
+
+- name: Open ports 443 and 22 in UFW
+  community.general.ufw:
+    rule: allow
+    port: "{{ item }}"
+    proto: tcp
+    state: enabled
+  loop:
+    - 443
+    - 22
+    - 80
+  tags: step3
+
+- name: Replace module
+  replace:
+        path: /etc/zabbix/apache.conf
+        regexp: '        # php_value date.timezone Europe/Riga'
+        replace: '        php_value date.timezone Asia/Tehran'
+  tags: step3
+
+- name: Restart apach2 services
+  systemd:
+    name: apache2
+    state: restarted
+  tags: step3
