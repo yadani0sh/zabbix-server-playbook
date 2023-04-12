@@ -3,7 +3,7 @@
      src: zabbix-release_5.0-1+focal_all.deb
      dest: /root
   tags: step1
-- name: ---------install zabbix-release_5.0-1+focal_all.deb -----
+- name: ---------install zabbix-release_5.4-1+focal_all.deb -----
   apt: 
      deb: /root/zabbix-release_5.0-1+focal_all.deb
      state: present
@@ -35,9 +35,16 @@
     - mysql-server-8.0
     - python3-pymysql
   tags: step1
+
 - name: Update repository cache
   apt:
     update_cache: yes
+  tags: step1
+- name: Set root user password
+  community.mysql.mysql_user:
+    name: root
+    password: '{{root_pass_db}}'
+    login_unix_socket: /var/run/mysqld/mysqld.sock
   tags: step1
 
 - name: Create Zabbix database
@@ -46,8 +53,8 @@
     encoding: utf8
     collation: utf8_bin
     login_user: root
-    login_password: Sh4610150*
-  tags: step2
+    login_password: '{{root_pass_db}}'
+  tags: step1
 
 - name: create user zabbix
   community.mysql.mysql_user:
@@ -58,7 +65,7 @@
     login_user: root
     login_password: '{{root_pass_db}}'
     state: present
-  tags: step2
+  tags: step1
 
 - name: Grant all privileges to Zabbix user
   community.mysql.mysql_user:
@@ -70,22 +77,22 @@
     login_user: root
     login_password: '{{root_pass_db}}'
     state: present
-  tags: step2
+  tags: step1
 
 
 - name: Import Zabbix database schema
   expect:
     command: zcat /usr/share/doc/zabbix-server-mysql/create.sql.gz | mysql -D zabbix -u zabbix -p
     responses:
-      'Enter password:': '"{{Zabbix_pass_db}}"\r'
-  tags: step2
+      'Enter password:': '{{Zabbix_pass_db}}\n'
+  tags: step1
 
 - name: Replace module
   replace:
         path: /etc/zabbix/zabbix_server.conf
         regexp: '# DBPassword='
-        replace: 'DBPassword="{{Zabbix_pass_db}}"'
-  tags: step3
+        replace: 'DBPassword={{Zabbix_pass_db}}'
+  tags: step2
 
 - name: Restart Zabbix services
   systemd:
@@ -95,7 +102,7 @@
     - zabbix-server
     - zabbix-agent
     - apache2
-  tags: step3
+  tags: step2
 
 - name: Enable Zabbix services
   systemd:
@@ -105,19 +112,19 @@
     - zabbix-server
     - zabbix-agent
     - apache2
-  tags: step3
+  tags: step2
 
 - name: Replace module
   replace:
         path: /etc/zabbix/zabbix_server.conf
         regexp: ';date.timezone ='
         replace: 'date.timezone=Asia/Tehran'
-  tags: step3
+  tags: step2
 
 - name: Enable UFW firewall
   community.general.ufw:
     state: enabled
-  tags: step3
+  tags: step2
 
 - name: Open ports 443 and 22 in UFW
   community.general.ufw:
@@ -129,17 +136,19 @@
     - 443
     - 22
     - 80
-  tags: step3
+    - 10050
+    - 10051
+  tags: step2
 
 - name: Replace module
   replace:
         path: /etc/zabbix/apache.conf
         regexp: '        # php_value date.timezone Europe/Riga'
         replace: '        php_value date.timezone Asia/Tehran'
-  tags: step3
+  tags: step2
 
 - name: Restart apach2 services
   systemd:
     name: apache2
     state: restarted
-  tags: step3
+  tags: step2
